@@ -1,0 +1,10 @@
+{
+  "name": "h5p-question-cfrd",
+  "version": "1.0.0",
+  "private": true,
+  "description": "H5P.QuestionCFRD sync helper",
+  "scripts": {
+    "sync:lumi": "powershell -ExecutionPolicy Bypass -File .\\scripts\\sync-lumi.ps1",
+    "deploy:lumi": "npm run sync:lumi"
+  }
+}

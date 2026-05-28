@@ -1,12 +1,12 @@
 H5P.Tooltip = H5P.Tooltip || function() {};
 
-H5P.Question = (function ($, EventDispatcher, JoubelUI) {
+H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
   /**
    * Extending this class make it alot easier to create tasks for other
    * content types.
    *
-   * @class H5P.Question
+   * @class H5P.QuestionCFRD
    * @extends H5P.EventDispatcher
    * @param {string} type
    */
@@ -1087,7 +1087,7 @@ H5P.Question = (function ($, EventDispatcher, JoubelUI) {
     /**
      * Remove feedback
      *
-     * @return {H5P.Question}
+     * @return {H5P.QuestionCFRD}
      */
     self.removeFeedback = function () {
 
@@ -1262,11 +1262,11 @@ H5P.Question = (function ($, EventDispatcher, JoubelUI) {
      * @param {string} data.text
      * @param {string} title Title for explanation panel
      *
-     * @return {H5P.Question}
+     * @return {H5P.QuestionCFRD}
      */
     self.setExplanation = function (data, title) {
       if (data) {
-        var explainer = new H5P.Question.Explainer(title, data);
+        var explainer = new H5P.QuestionCFRD.Explainer(title, data);
 
         if (sections.explanation) {
           // Update section
@@ -1799,4 +1799,4 @@ H5P.Question = (function ($, EventDispatcher, JoubelUI) {
   };
 
   return Question;
-})(H5P.jQuery, H5P.EventDispatcher, H5P.JoubelUI);
+})(H5P.jQuery, H5P.EventDispatcher, H5P.JoubelUICFRD);
