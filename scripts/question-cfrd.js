@@ -76,6 +76,11 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     // Feedback transition timer
     var feedbackTransitionTimer;
 
+    // Dismissible feedback popup state (summary popups without click anchor)
+    var feedbackPopupDismissible = false;
+    var feedbackPopupOnClose = null;
+    var feedbackPopupPresentation = null;
+
     // Used when reading messages to the user
     var $read, readText;
 
@@ -150,12 +155,143 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     };
 
     /**
+     * Hide a dismissible feedback popup without removing it from the DOM.
+     *
+     * @private
+     * @param {H5P.jQuery} $element
+     * @param {H5P.jQuery} $tail
+     */
+    var hideDismissibleFeedbackPopup = function ($element, $tail) {
+      $element.removeClass('h5p-question-visible h5p-question-popup-open');
+      $tail.hide();
+
+      if (sections.scorebar) {
+        sections.scorebar.$element.removeClass('h5p-question-visible').css('max-height', '');
+        sections.scorebar.isVisible = false;
+      }
+
+      if (sections.buttons) {
+        sections.buttons.$element.removeClass('has-scorebar');
+      }
+
+      if (feedbackPopupOnClose) {
+        feedbackPopupOnClose();
+      }
+
+      self.trigger('resize');
+    };
+
+    /**
+     * Apply popup background for styled overall feedback.
+     *
+     * @private
+     * @param {object} [presentation]
+     */
+    var applyFeedbackPopupPresentation = function (presentation) {
+      if (!presentation || !sections.feedback) {
+        return;
+      }
+
+      var $element = sections.feedback.$element;
+      var $parent = sections.content.$element;
+
+      if (presentation.popupBackgroundColor) {
+        $element.css('background-color', presentation.popupBackgroundColor);
+        if ($parent) {
+          $parent.find('.h5p-question-feedback-tail').css('background-color', presentation.popupBackgroundColor);
+        }
+      }
+    };
+
+    /**
+     * Measure popup height without locking max-height (overall feedback popups).
+     *
+     * @private
+     * @param {H5P.jQuery} $element
+     * @return {number}
+     */
+    var measureFeedbackPopupHeight = function ($element) {
+      $element.css('max-height', 'none');
+      return Math.round($element.outerHeight());
+    };
+
+    /**
+     * Run callback after overall feedback images inside the popup have loaded.
+     *
+     * @private
+     * @param {H5P.jQuery} $element
+     * @param {function} callback
+     */
+    var whenFeedbackImagesReady = function ($element, callback) {
+      var $images = $element.find('.h5p-overall-feedback__image');
+      var pending = 0;
+      var i;
+      var img;
+
+      if (!$images.length) {
+        callback();
+        return;
+      }
+
+      var checkDone = function () {
+        pending--;
+        if (pending <= 0) {
+          callback();
+        }
+      };
+
+      for (i = 0; i < $images.length; i++) {
+        img = $images[i];
+        if (img.complete) {
+          continue;
+        }
+        pending++;
+        $($images[i]).one('load error', checkDone);
+      }
+
+      if (pending === 0) {
+        callback();
+      }
+    };
+
+    /**
+     * Finalize popup layout after scorebar height is known.
+     *
+     * @private
+     * @param {H5P.jQuery} $element
+     */
+    var finalizeFeedbackPopupLayout = function ($element) {
+      if (sections.scorebar) {
+        sections.scorebar.$element.css('max-height', 'none');
+      }
+
+      $element.css('max-height', 'none');
+
+      var $click = (clickElement != null ? clickElement.$element : null);
+
+      whenFeedbackImagesReady($element, function () {
+        positionFeedbackPopup($element, $click);
+        self.trigger('resize');
+      });
+    };
+
+    /**
      * Make feedback into a popup and position relative to click.
      *
      * @private
-     * @param {string} [closeText] Text for the close button
+     * @param {object} [popupSettings]
+     * @param {string} [popupSettings.closeText] Text for the close button
+     * @param {boolean} [popupSettings.alwaysShowClose] Always show the close button
+     * @param {boolean} [popupSettings.dismissible] Hide popup on close instead of removing it
+     * @param {function} [popupSettings.onClose] Called when a dismissible popup is closed
      */
-    var makeFeedbackPopup = function (closeText) {
+    var makeFeedbackPopup = function (popupSettings) {
+      popupSettings = popupSettings || {};
+      var closeText = popupSettings.closeText;
+
+      feedbackPopupDismissible = popupSettings.dismissible === true;
+      feedbackPopupOnClose = popupSettings.onClose || null;
+
       var $element = sections.feedback.$element;
       var $parent = sections.content.$element;
       var $click = (clickElement != null ? clickElement.$element : null);
@@ -164,6 +300,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
       if (sections.scorebar) {
         sections.scorebar.$element.appendTo($element);
+        showSection(sections.scorebar);
       }
 
       $parent.addClass('h5p-has-question-popup');
@@ -174,24 +311,32 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
       }).hide()
         .appendTo($parent);
 
+      var dismissPopup = function (event) {
+        if (event) {
+          event.preventDefault();
+        }
+
+        if (feedbackPopupDismissible) {
+          hideDismissibleFeedbackPopup($element, $tail);
+        }
+        else {
+          $element.remove();
+          $tail.remove();
+        }
+      };
+
       // Draw the close button
       var $close = $('<div/>', {
         'class': 'h5p-question-feedback-close',
         'tabindex': 0,
         'title': closeText,
         on: {
-          click: function (event) {
-            $element.remove();
-            $tail.remove();
-            event.preventDefault();
-          },
+          click: dismissPopup,
           keydown: function (event) {
             switch (event.which) {
               case 13: // Enter
               case 32: // Space
-                $element.remove();
-                $tail.remove();
-                event.preventDefault();
+                dismissPopup(event);
             }
           }
         }
@@ -207,8 +352,13 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           sections.buttons.$element.appendTo(sections.feedback.$element);
         }
       }
+      else if (popupSettings.alwaysShowClose) {
+        $element.addClass('h5p-question-feedback-correct');
+        $close.show();
+      }
 
-      positionFeedbackPopup($element, $click);
+      $element.addClass('h5p-question-popup-open');
+      applyFeedbackPopupPresentation(popupSettings);
     };
 
     /**
@@ -222,7 +372,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
       var $container = $element.parent();
       var $tail = $element.siblings('.h5p-question-feedback-tail');
       var popupWidth = $element.outerWidth();
-      var popupHeight = setElementHeight($element);
+      var popupHeight = measureFeedbackPopupHeight($element);
       var space = 15;
       var disableTail = false;
       var positionY = $container.height() / 2 - popupHeight / 2;
@@ -338,6 +488,10 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
       // If this element is shown in the popup, we can't set width to 100%,
       // since it already has a width set in CSS
       var isFeedbackPopup = $element.hasClass('h5p-question-popup');
+
+      if (isFeedbackPopup) {
+        return measureFeedbackPopupHeight($element);
+      }
 
       // Get natural element height
       var $tmp = $element.clone()
@@ -1120,9 +1274,58 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         if ($wrapper) {
           $wrapper.find('.h5p-question-feedback-tail').remove();
         }
+
+        feedbackPopupDismissible = false;
+        feedbackPopupOnClose = null;
+        feedbackPopupPresentation = null;
       }
 
       return self;
+    };
+
+    /**
+     * Show a previously hidden dismissible feedback popup.
+     *
+     * @return {H5P.QuestionCFRD}
+     */
+    self.showFeedbackPopup = function () {
+      if (!sections.feedback || !sections.feedback.$element.hasClass('h5p-question-popup')) {
+        return self;
+      }
+
+      var $element = sections.feedback.$element;
+      var $parent = sections.content.$element;
+      var $tail = $parent.find('.h5p-question-feedback-tail').first();
+
+      if (sections.scorebar) {
+        sections.scorebar.$element.appendTo($element);
+        showSection(sections.scorebar);
+      }
+
+      showSection(sections.feedback);
+      $element.addClass('h5p-question-popup-open');
+
+      if (sections.buttons) {
+        sections.buttons.$element.removeClass('has-scorebar');
+      }
+
+      setTimeout(function () {
+        finalizeFeedbackPopupLayout($element);
+        applyFeedbackPopupPresentation(feedbackPopupPresentation);
+      }, 0);
+
+      return self;
+    };
+
+    /**
+     * Returns true if the feedback popup is currently visible.
+     *
+     * @return {boolean}
+     */
+    self.isFeedbackPopupVisible = function () {
+      return !!(sections.feedback
+        && sections.feedback.$element.hasClass('h5p-question-popup')
+        && sections.feedback.$element.hasClass('h5p-question-visible'));
     };
 
     /**
@@ -1136,6 +1339,9 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
      * @param {object} [popupSettings] Extra settings for popup feedback
      * @param {boolean} [popupSettings.showAsPopup] Should the feedback display as popup?
      * @param {string} [popupSettings.closeText] Translation for close button text
+     * @param {boolean} [popupSettings.alwaysShowClose] Always show close button (e.g. summary popup)
+     * @param {boolean} [popupSettings.dismissible] Hide popup on close and allow reopening
+     * @param {function} [popupSettings.onClose] Callback when dismissible popup is closed
      * @param {object} [popupSettings.click] Element representing where user clicked on screen
      */
     self.setFeedback = function (content, score, maxScore, scoreBarLabel, helpText, popupSettings, scoreExplanationButtonLabel) {
@@ -1177,10 +1383,17 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
       // Feedback for readspeakers
       if (!behaviour.disableReadSpeaker && scoreBarLabel) {
-        self.read(scoreBarLabel.replace(':num', score).replace(':total', maxScore) + '. ' + (content ? content : ''));
+        var feedbackForRead = (popupSettings != null && popupSettings.plainText)
+          ? popupSettings.plainText
+          : (content ? content : '');
+        self.read(scoreBarLabel.replace(':num', score).replace(':total', maxScore) + '. ' + feedbackForRead);
       }
 
       showFeedback = true;
+
+      var useFeedbackPopup = popupSettings != null && popupSettings.showAsPopup == true
+        && content !== undefined && content.trim().length > 0;
+
       if (sections.feedback) {
         // Update section
         update('feedback', $feedback);
@@ -1192,20 +1405,36 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         register('scorebar', $scorebar);
         if (initialized && $wrapper) {
           insert(self.order, 'feedback', sections, $wrapper);
-          insert(self.order, 'scorebar', sections, $wrapper);
+          if (!useFeedbackPopup) {
+            insert(self.order, 'scorebar', sections, $wrapper);
+          }
         }
       }
 
-      showSection(sections.feedback);
-      showSection(sections.scorebar);
+      if (useFeedbackPopup) {
+        feedbackPopupPresentation = {
+          popupBackgroundColor: popupSettings.popupBackgroundColor
+        };
 
-      resizeButtons();
-
-      if (popupSettings != null && popupSettings.showAsPopup == true) {
-        makeFeedbackPopup(popupSettings.closeText);
         scoreBar.setScore(score);
+        resizeButtons();
+        makeFeedbackPopup(popupSettings);
+        showSection(sections.feedback);
+
+        if (sections.buttons) {
+          sections.buttons.$element.removeClass('has-scorebar');
+        }
+
+        feedbackTransitionTimer = setTimeout(function () {
+          finalizeFeedbackPopupLayout(sections.feedback.$element);
+        }, 0);
       }
       else {
+        showSection(sections.feedback);
+        showSection(sections.scorebar);
+
+        resizeButtons();
+
         // Show feedback section
         feedbackTransitionTimer = setTimeout(function () {
           setElementHeight(sections.feedback.$element);
@@ -1753,15 +1982,31 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     self.on('resize', function () {
       // Allow elements to attach and set their height before resizing
       if (!sectionsIsTransitioning && sections.feedback && showFeedback) {
-        // Resize feedback to fit
-        setElementHeight(sections.feedback.$element);
+        if (sections.feedback.$element.hasClass('h5p-question-popup')) {
+          sections.feedback.$element.css('max-height', 'none');
+        }
+        else {
+          setElementHeight(sections.feedback.$element);
+        }
       }
 
       // Re-position feedback popup if in use
       var $element = sections.feedback;
       var $click = clickElement;
 
-      if ($element != null && $element.$element != null && $click != null && $click.$element != null) {
+      if ($element != null && $element.$element != null
+          && $element.$element.hasClass('h5p-question-popup')
+          && $element.$element.hasClass('h5p-question-visible')) {
+        setTimeout(function () {
+          whenFeedbackImagesReady($element.$element, function () {
+            positionFeedbackPopup(
+              $element.$element,
+              $click != null ? $click.$element : null
+            );
+          });
+        }, 10);
+      }
+      else if ($element != null && $element.$element != null && $click != null && $click.$element != null) {
         setTimeout(function () {
           positionFeedbackPopup($element.$element, $click.$element);
         }, 10);
@@ -1776,22 +2021,225 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
   Question.prototype.constructor = Question;
 
   /**
+   * Normalize overall feedback configuration from content parameters.
+   *
+   * @param {Object|Array} overallFeedbackOption
+   * @return {{popupBackgroundColor: string, feedbackTextColor: string, ranges: Array}}
+   */
+  Question.normalizeOverallFeedbackConfig = function (overallFeedbackOption) {
+    var config = {
+      popupBackgroundColor: '#ffffff',
+      feedbackTextColor: '#333333',
+      ranges: []
+    };
+
+    if (!overallFeedbackOption) {
+      return config;
+    }
+
+    if (Array.isArray(overallFeedbackOption)) {
+      config.ranges = overallFeedbackOption;
+      return config;
+    }
+
+    if (overallFeedbackOption.popupBackgroundColor) {
+      config.popupBackgroundColor = overallFeedbackOption.popupBackgroundColor;
+    }
+
+    if (overallFeedbackOption.feedbackTextColor) {
+      config.feedbackTextColor = overallFeedbackOption.feedbackTextColor;
+    }
+
+    if (Array.isArray(overallFeedbackOption.overallFeedback)) {
+      config.ranges = overallFeedbackOption.overallFeedback;
+    }
+
+    return config;
+  };
+
+  /**
+   * Escape HTML for safe text output.
+   *
+   * @private
+   * @param {string} text
+   * @return {string}
+   */
+  var escapeOverallFeedbackHtml = function (text) {
+    return $('<div>').text(text).html();
+  };
+
+  /**
+   * Read appearance settings from a range entry (nested or legacy flat structure).
+   *
+   * @param {Object} entry
+   * @return {Object}
+   */
+  Question.getOverallFeedbackAppearance = function (entry) {
+    entry = entry || {};
+    var appearance = entry.appearance || {};
+
+    return {
+      feedbackLeadText: appearance.feedbackLeadText !== undefined
+        ? appearance.feedbackLeadText
+        : entry.feedbackLeadText,
+      feedbackLeadBold: appearance.feedbackLeadBold !== undefined
+        ? appearance.feedbackLeadBold
+        : entry.feedbackLeadBold,
+      feedbackLeadTextColor: appearance.feedbackLeadTextColor
+        || appearance.feedbackTextColor
+        || entry.feedbackLeadTextColor
+        || entry.feedbackTextColor
+        || '#1a73d9',
+      feedbackTextAlign: appearance.feedbackTextAlign || entry.feedbackTextAlign || 'left',
+      feedbackImage: appearance.feedbackImage || entry.feedbackImage,
+      feedbackImagePosition: appearance.feedbackImagePosition || entry.feedbackImagePosition || 'left'
+    };
+  };
+
+  /**
+   * Build overall feedback markup for a matching range entry.
+   *
+   * @param {Object} entry
+   * @param {string} popupBackgroundColor
+   * @param {string} feedbackTextColor
+   * @param {number} contentId
+   * @param {number|string} score
+   * @param {number|string} maxScore
+   * @return {{html: string, plainText: string, popupBackgroundColor: string}|null}
+   */
+  Question.buildOverallFeedbackMarkup = function (entry, popupBackgroundColor, feedbackTextColor, contentId, score, maxScore) {
+    var appearance = Question.getOverallFeedbackAppearance(entry);
+    var lead = (appearance.feedbackLeadText && appearance.feedbackLeadText.trim()) || '';
+    var body = (entry.feedback && entry.feedback.trim()) || '';
+
+    if (!lead && !body) {
+      return null;
+    }
+
+    var replacePlaceholders = function (text) {
+      return escapeOverallFeedbackHtml(String(text))
+        .replace(/@score/g, score)
+        .replace(/@total/g, maxScore);
+    };
+
+    var bodyTextColor = feedbackTextColor || '#333333';
+    var leadTextColor = appearance.feedbackLeadTextColor;
+    var imagePosition = appearance.feedbackImagePosition || 'left';
+    var leadBold = appearance.feedbackLeadBold !== false;
+    var hasImage = appearance.feedbackImage && appearance.feedbackImage.path && contentId !== undefined;
+    var textAlign = hasImage
+      ? (imagePosition === 'above' ? 'center' : 'left')
+      : (appearance.feedbackTextAlign || 'left');
+    var outerClasses = 'h5p-overall-feedback';
+
+    if (hasImage) {
+      outerClasses += ' h5p-overall-feedback--image-' + imagePosition;
+    }
+    else {
+      outerClasses += ' h5p-overall-feedback--no-image';
+    }
+
+    var html = '<div class="' + outerClasses + '">';
+    html += '<div class="h5p-overall-feedback__content" style="color:' + escapeOverallFeedbackHtml(bodyTextColor) + '">';
+
+    if (hasImage) {
+      var imgPath = H5P.getPath(appearance.feedbackImage.path, contentId);
+      var altText = lead ? lead.replace(/@score/g, score).replace(/@total/g, maxScore) : '';
+      html += '<img class="h5p-overall-feedback__image" src="' + escapeOverallFeedbackHtml(imgPath) + '" alt="' + escapeOverallFeedbackHtml(altText) + '"/>';
+    }
+
+    html += '<div class="h5p-overall-feedback__text h5p-overall-feedback__text--align-' + textAlign + '">';
+
+    if (lead) {
+      var leadHtml = replacePlaceholders(lead);
+      var leadStyle = leadTextColor
+        ? ' style="color:' + escapeOverallFeedbackHtml(leadTextColor) + '"'
+        : '';
+      html += leadBold
+        ? '<strong class="h5p-overall-feedback__lead"' + leadStyle + '>' + leadHtml + '</strong>'
+        : '<span class="h5p-overall-feedback__lead"' + leadStyle + '>' + leadHtml + '</span>';
+    }
+
+    if (body) {
+      if (lead) {
+        html += ' ';
+      }
+      html += '<span class="h5p-overall-feedback__body">' + replacePlaceholders(body) + '</span>';
+    }
+
+    html += '</div></div></div>';
+
+    var plainText = ((lead ? lead + ' ' : '') + body)
+      .replace(/@score/g, score)
+      .replace(/@total/g, maxScore);
+
+    return {
+      html: html,
+      plainText: plainText,
+      popupBackgroundColor: popupBackgroundColor || '#ffffff'
+    };
+  };
+
+  /**
+   * Resolve overall feedback markup and presentation for the current score.
+   *
+   * @param {Object|Array} overallFeedbackOption
+   * @param {number} scoreRatio
+   * @param {number} contentId
+   * @param {number|string} score
+   * @param {number|string} maxScore
+   * @return {{html: string, plainText: string, popupBackgroundColor: string}|null}
+   */
+  Question.resolveOverallFeedback = function (overallFeedbackOption, scoreRatio, contentId, score, maxScore) {
+    var config = Question.normalizeOverallFeedbackConfig(overallFeedbackOption);
+    var scorePercent = Math.floor(scoreRatio * 100);
+    var i;
+
+    for (i = 0; i < config.ranges.length; i++) {
+      var entry = config.ranges[i];
+      var appearance = Question.getOverallFeedbackAppearance(entry);
+      var lead = (appearance.feedbackLeadText && appearance.feedbackLeadText.trim()) || '';
+      var body = (entry.feedback && entry.feedback.trim()) || '';
+      var hasFeedback = lead.length > 0 || body.length > 0;
+
+      if (entry.from <= scorePercent && entry.to >= scorePercent && hasFeedback) {
+        return Question.buildOverallFeedbackMarkup(
+          entry,
+          config.popupBackgroundColor,
+          config.feedbackTextColor,
+          contentId,
+          score,
+          maxScore
+        );
+      }
+    }
+
+    return null;
+  };
+
+  /**
    * Determine the overall feedback to display for the question.
    * Returns empty string if no matching range is found.
    *
-   * @param {Object[]} feedbacks
+   * @param {Object|Array} feedbacks
    * @param {number} scoreRatio
    * @return {string}
    */
   Question.determineOverallFeedback = function (feedbacks, scoreRatio) {
+    var config = Question.normalizeOverallFeedbackConfig(feedbacks);
     scoreRatio = Math.floor(scoreRatio * 100);
 
-    for (var i = 0; i < feedbacks.length; i++) {
-      var feedback = feedbacks[i];
-      var hasFeedback = (feedback.feedback !== undefined && feedback.feedback.trim().length !== 0);
+    for (var i = 0; i < config.ranges.length; i++) {
+      var feedback = config.ranges[i];
+      var appearance = Question.getOverallFeedbackAppearance(feedback);
+      var lead = (appearance.feedbackLeadText && appearance.feedbackLeadText.trim()) || '';
+      var body = (feedback.feedback !== undefined && feedback.feedback.trim().length !== 0)
+        ? feedback.feedback.trim()
+        : '';
+      var hasFeedback = lead.length > 0 || body.length > 0;
 
       if (feedback.from <= scoreRatio && feedback.to >= scoreRatio && hasFeedback) {
-        return feedback.feedback;
+        return body || lead;
       }
     }
 
