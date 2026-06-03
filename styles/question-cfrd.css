@@ -184,15 +184,46 @@
   display: inline-block;
 }
 .h5p-question-buttons.h5p-question-visible {
-  display: inline-block;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5em;
   width: calc(100% - 1.5em);
   margin-left: 1em;
   margin-right: 0.5em;
   margin-bottom: 1em;
 }
-.h5p-question-buttons .h5p-joubelui-button,
-.h5p-question-buttons .h5p-joubelui-button:first-child:last-child {
-  margin: 0 0.5em 0 0;
+
+/* Hidden action buttons stay in DOM; out of horizontal flow, no interaction */
+.h5p-question-buttons {
+  position: relative;
+  float: right;
+}
+
+.h5p-question-buttons .h5p-joubelui-button.h5p-question-button-hidden {
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  float: none !important;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+}
+
+.h5p-question-buttons.h5p-question-buttons-all-hidden {
+  display: inline-flex;
+  min-height: 3.14286em;
+}
+
+.h5p-question-buttons .h5p-joubelui-button:not(.h5p-question-button-hidden),
+.h5p-question-buttons .h5p-joubelui-button:not(.h5p-question-button-hidden):first-child:last-child {
+  margin: 0;
   white-space: nowrap;
 }
 .h5p-question-buttons.has-scorebar {
@@ -455,4 +486,27 @@
 
 .h5p-overall-feedback__body {
   display: inline;
+}
+
+/* Action buttons — only when author configured appearance.actionButtons */
+.h5p-question-buttons.h5p-action-buttons-custom .h5p-joubelui-button {
+  background: var(--h5p-q-btn-bg);
+  color: var(--h5p-q-btn-text);
+  border-radius: var(--h5p-q-btn-radius);
+  border: var(--h5p-q-btn-border-width) solid var(--h5p-q-btn-border-color);
+  box-shadow: none;
+}
+
+.h5p-question-buttons.h5p-action-buttons-custom .h5p-joubelui-button:hover,
+.h5p-question-buttons.h5p-action-buttons-custom .h5p-joubelui-button:focus {
+  background: var(--h5p-q-btn-hover-bg);
+  color: var(--h5p-q-btn-hover-text);
+  border-color: var(--h5p-q-btn-hover-border-color);
+}
+
+.h5p-question-buttons.h5p-action-buttons-custom .h5p-joubelui-button:active {
+  background: var(--h5p-q-btn-hover-bg);
+  color: var(--h5p-q-btn-hover-text);
+  border-color: var(--h5p-q-btn-hover-border-color);
+  box-shadow: none;
 }

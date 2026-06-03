@@ -3,7 +3,7 @@
   "machineName": "H5P.QuestionCFRD",
   "majorVersion": 1,
   "minorVersion": 0,
-  "patchVersion": 13,
+  "patchVersion": 26,
   "runnable": 0,
   "license": "MIT",
   "author": "CFRD",
@@ -22,6 +22,9 @@
   "preloadedJs": [
     {
       "path": "scripts/question-cfrd.js"
+    },
+    {
+      "path": "scripts/button-appearance.js"
     },
     {
       "path": "scripts/explainer.js"

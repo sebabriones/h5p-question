@@ -48,6 +48,10 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     var toggleButtonsTimer;
     var toggleButtonsTransitionTimer;
     var buttonTruncationTimer;
+    var buttonsSectionReservedMinHeight = '';
+    var buttonsPrePopupFooterReserve = '';
+    var BUTTONS_SECTION_FALLBACK_MIN_HEIGHT = '3.14286em';
+    var SCOREBAR_ROW_FALLBACK_MIN_HEIGHT = '4em';
 
     // Keeps track of initialization of question
     var initialized = false;
@@ -80,6 +84,36 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     var feedbackPopupDismissible = false;
     var feedbackPopupOnClose = null;
     var feedbackPopupPresentation = null;
+    var actionButtonAppearanceConfig = null;
+
+    /**
+     * Apply shared action-button appearance to the buttons section.
+     * @private
+     */
+    var applyActionButtonAppearanceToButtons = function () {
+      if (!sections.buttons ||
+          !sections.buttons.$element ||
+          !sections.buttons.$element.length) {
+        return;
+      }
+
+      if (typeof H5P.QuestionCFRD.hasActionButtonAppearance !== 'function' ||
+          typeof H5P.QuestionCFRD.applyActionButtonAppearance !== 'function') {
+        return;
+      }
+
+      if (!H5P.QuestionCFRD.hasActionButtonAppearance(actionButtonAppearanceConfig)) {
+        if (typeof H5P.QuestionCFRD.clearActionButtonAppearance === 'function') {
+          H5P.QuestionCFRD.clearActionButtonAppearance(sections.buttons.$element);
+        }
+        return;
+      }
+
+      H5P.QuestionCFRD.applyActionButtonAppearance(
+        sections.buttons.$element,
+        actionButtonAppearanceConfig
+      );
+    };
 
     // Used when reading messages to the user
     var $read, readText;
@@ -148,6 +182,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
             // Add after element
             elements[id].$element.insertAfter(elements[order[i - 1]].$element);
           }
+          prepareButtonElementForShow(id);
           elements[id].isVisible = true;
           break;
         }
@@ -174,11 +209,13 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         sections.buttons.$element.removeClass('has-scorebar');
       }
 
+      syncButtonsFooterReserveForFeedbackPopup();
+
       if (feedbackPopupOnClose) {
         feedbackPopupOnClose();
       }
 
-      self.trigger('resize');
+      schedulePopupFooterReserveSync();
     };
 
     /**
@@ -271,7 +308,8 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
       whenFeedbackImagesReady($element, function () {
         positionFeedbackPopup($element, $click);
-        self.trigger('resize');
+        syncButtonsFooterReserveForFeedbackPopup(buttonsPrePopupFooterReserve);
+        schedulePopupFooterReserveSync();
       });
     };
 
@@ -485,6 +523,13 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         return;
       }
 
+      // All action buttons hidden: keep reserved footer height (do not measure 0).
+      if ($element.hasClass('h5p-question-buttons-all-hidden')) {
+        var reservedMax = $element.css('min-height');
+        $element.css('max-height', reservedMax && reservedMax !== '0px' ? reservedMax : 'none');
+        return;
+      }
+
       // If this element is shown in the popup, we can't set width to 100%,
       // since it already has a width set in CSS
       var isFeedbackPopup = $element.hasClass('h5p-question-popup');
@@ -543,13 +588,355 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     };
 
     /**
-     * Does the actual hiding.
+     * Ensure a button element is mounted in the buttons section.
+     * @private
+     * @param {string} buttonId
+     */
+    var ensureButtonMounted = function (buttonId) {
+      var button = buttons[buttonId];
+
+      if (!button || !button.$element || !button.$element.length || !sections.buttons) {
+        return;
+      }
+
+      if (!button.$element.parent().length) {
+        button.$element.appendTo(sections.buttons.$element);
+      }
+    };
+
+    /**
+     * Hide a button in the DOM without unmounting (keeps footer height stable).
+     * @private
+     * @param {string} buttonId
+     */
+    var hideButtonElement = function (buttonId) {
+      var button = buttons[buttonId];
+
+      if (!button || !button.$element || !button.$element.length) {
+        return;
+      }
+
+      ensureButtonMounted(buttonId);
+
+      button.$element
+        .addClass('h5p-question-button-hidden')
+        .attr('aria-hidden', 'true')
+        .attr('tabindex', '-1');
+    };
+
+    /**
+     * Prepare a button element before showing (remove stale hidden state).
+     * @private
+     * @param {string} buttonId
+     */
+    var prepareButtonElementForShow = function (buttonId) {
+      var button = buttons[buttonId];
+
+      if (!button || !button.$element || !button.$element.length) {
+        return;
+      }
+
+      ensureButtonMounted(buttonId);
+
+      button.$element
+        .removeClass('h5p-question-button-hidden')
+        .removeAttr('aria-hidden')
+        .removeAttr('tabindex');
+    };
+
+    /**
+     * Count buttons that will stay visible after the pending hide operations.
+     * @private
+     * @returns {number}
+     */
+    var countButtonsVisibleAfterHide = function () {
+      var remain = 0;
+
+      for (var id in buttons) {
+        if (!buttons.hasOwnProperty(id) || !buttons[id].isVisible) {
+          continue;
+        }
+
+        var scheduledHide = false;
+        for (var h = 0; h < buttonsToHide.length; h++) {
+          if (buttonsToHide[h].id === id) {
+            scheduledHide = true;
+            break;
+          }
+        }
+
+        if (!scheduledHide) {
+          remain += 1;
+        }
+      }
+
+      return remain;
+    };
+
+    /**
+     * Capture current buttons section height in em units.
+     * @private
+     * @param {H5P.jQuery} $element
+     * @returns {string}
+     */
+    var pxToEm = function ($element, heightPx) {
+      var fontSize = parseFloat($element.css('fontSize')) || 16;
+      return (heightPx / fontSize) + 'em';
+    };
+
+    /**
+     * @private
+     * @param {H5P.jQuery} $element
+     * @param {string} value
+     * @returns {number}
+     */
+    var parseCssLengthToPx = function ($element, value) {
+      if (!value || value === 'none' || value === '0px') {
+        return 0;
+      }
+
+      var fontSize = parseFloat($element.css('fontSize')) || 16;
+      var parsed = parseFloat(value);
+
+      if (isNaN(parsed)) {
+        return 0;
+      }
+
+      if (String(value).indexOf('em') !== -1) {
+        return parsed * fontSize;
+      }
+
+      return parsed;
+    };
+
+    /**
+     * @private
+     * @param {H5P.jQuery} $element
+     * @param {string} heightA
+     * @param {string} heightB
+     * @returns {string}
+     */
+    var combineHeightsEm = function ($element, heightA, heightB) {
+      var totalPx = parseCssLengthToPx($element, heightA) + parseCssLengthToPx($element, heightB);
+
+      if (totalPx <= 0) {
+        return BUTTONS_SECTION_FALLBACK_MIN_HEIGHT;
+      }
+
+      return pxToEm($element, totalPx);
+    };
+
+    /**
+     * Measure scorebar row height (used when scorebar moves into feedback popup).
+     * @private
+     * @returns {string}
+     */
+    var measureScorebarRowHeightEm = function () {
+      if (!sections.scorebar || !sections.scorebar.$element || !sections.scorebar.$element.length) {
+        return '';
+      }
+
+      var $scorebar = sections.scorebar.$element;
+      var heightPx = Math.ceil($scorebar.outerHeight(true));
+
+      if (heightPx <= 0) {
+        return '';
+      }
+
+      var $ref = (sections.buttons && sections.buttons.$element && sections.buttons.$element.length)
+        ? sections.buttons.$element
+        : $scorebar;
+
+      return pxToEm($ref, heightPx);
+    };
+
+    /**
+     * Apply reserved footer height on the buttons section.
+     * @private
+     * @param {H5P.jQuery} $btnSection
+     * @param {string} reservedHeight
+     */
+    var applyButtonsSectionReserve = function ($btnSection, reservedHeight) {
+      if (!$btnSection || !$btnSection.length || !reservedHeight) {
+        return;
+      }
+
+      $btnSection.addClass('h5p-question-buttons-all-hidden');
+      $btnSection.css({
+        'min-height': reservedHeight,
+        'max-height': reservedHeight
+      });
+      buttonsSectionReservedMinHeight = reservedHeight;
+      showSection(sections.buttons);
+    };
+
+    /**
+     * Keep footer height when scorebar is inside the feedback popup (scorebar is not in footer).
+     * @private
+     * @param {string} [buttonReserveOverride]
+     */
+    var syncButtonsFooterReserveForFeedbackPopup = function (buttonReserveOverride) {
+      if (!sections.buttons || !sections.buttons.$element) {
+        return;
+      }
+
+      var $btnSection = sections.buttons.$element;
+
+      if (!$btnSection.hasClass('h5p-question-buttons-all-hidden')) {
+        return;
+      }
+
+      var buttonReserve = buttonReserveOverride
+        || buttonsPrePopupFooterReserve
+        || buttonsSectionReservedMinHeight
+        || BUTTONS_SECTION_FALLBACK_MIN_HEIGHT;
+
+      applyButtonsSectionReserve($btnSection, buttonReserve);
+    };
+
+    /**
+     * Re-measure footer reserve after popup layout has settled.
+     * @private
+     */
+    var schedulePopupFooterReserveSync = function () {
+      var sync = function () {
+        syncButtonsFooterReserveForFeedbackPopup(buttonsPrePopupFooterReserve);
+        self.trigger('resize');
+      };
+
+      if (typeof window.requestAnimationFrame === 'function') {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(sync);
+        });
+      }
+      else {
+        setTimeout(sync, 32);
+      }
+    };
+
+    var captureButtonsSectionHeight = function ($element) {
+      if (!$element || !$element.length) {
+        return '';
+      }
+
+      var heightPx = Math.round($element.get(0).getBoundingClientRect().height);
+      if (heightPx <= 0) {
+        var maxHeight = $element.css('max-height');
+        return (maxHeight && maxHeight !== 'none' && maxHeight !== '0px') ? maxHeight : '';
+      }
+
+      return pxToEm($element, heightPx);
+    };
+
+    /**
+     * Reserve footer height before hiding every action button (nodes stay in DOM).
+     * @private
+     * @param {H5P.jQuery} $btnSection
+     * @returns {string}
+     */
+    var reserveButtonsSectionHeight = function ($btnSection) {
+      if (!$btnSection || !$btnSection.length) {
+        return buttonsSectionReservedMinHeight || BUTTONS_SECTION_FALLBACK_MIN_HEIGHT;
+      }
+
+      showSection(sections.buttons);
+
+      var maxButtonPx = Math.ceil($btnSection.outerHeight(true));
+      if (maxButtonPx < 0) {
+        maxButtonPx = 0;
+      }
+
+      for (var id in buttons) {
+        if (!buttons.hasOwnProperty(id)) {
+          continue;
+        }
+
+        var button = buttons[id];
+        if (!button.$element || !button.$element.length) {
+          continue;
+        }
+
+        if (button.$element.hasClass('h5p-question-button-hidden')) {
+          continue;
+        }
+
+        var buttonHeight = Math.ceil(button.$element.outerHeight(true));
+        if (buttonHeight > maxButtonPx) {
+          maxButtonPx = buttonHeight;
+        }
+      }
+
+      if (maxButtonPx > 0) {
+        buttonsSectionReservedMinHeight = pxToEm($btnSection, maxButtonPx);
+        return buttonsSectionReservedMinHeight;
+      }
+
+      var sectionHeight = captureButtonsSectionHeight($btnSection);
+      if (sectionHeight) {
+        buttonsSectionReservedMinHeight = sectionHeight;
+        return sectionHeight;
+      }
+
+      var $sample = $btnSection.children('.h5p-joubelui-button').first();
+      if ($sample.length) {
+        var $clone = $sample.clone()
+          .removeClass('h5p-question-button-hidden')
+          .attr('aria-hidden', 'true')
+          .css({
+            visibility: 'hidden',
+            position: 'absolute',
+            left: '-9999px',
+            top: 0,
+            width: 'auto',
+            height: 'auto',
+            margin: 0,
+            padding: null,
+            border: 0,
+            overflow: 'visible',
+            clip: 'auto',
+            clipPath: 'none'
+          })
+          .appendTo(document.body);
+        var cloneHeight = Math.ceil($clone.outerHeight(true));
+        $clone.remove();
+
+        if (cloneHeight > 0) {
+          buttonsSectionReservedMinHeight = pxToEm($btnSection, cloneHeight);
+          return buttonsSectionReservedMinHeight;
+        }
+      }
+
+      return buttonsSectionReservedMinHeight || BUTTONS_SECTION_FALLBACK_MIN_HEIGHT;
+    };
+
+    /**
+     * Clear reserved min-height on the buttons section.
+     * @private
+     * @param {H5P.jQuery} $element
+     */
+    var clearButtonsSectionReserve = function ($element) {
+      if (!$element || !$element.length) {
+        return;
+      }
+
+      $element.css({
+        'min-height': '',
+        'max-height': ''
+      });
+      $element.removeClass('h5p-question-buttons-all-hidden');
+    };
+
+    /**
+     * Does the actual hiding (stay in DOM, no interaction).
      * @private
      * @param {string} buttonId
      */
     var hideButton = function (buttonId) {
-      // Using detach() vs hide() makes it harder to cheat.
-      buttons[buttonId].$element.detach();
+      if (!buttons[buttonId]) {
+        return;
+      }
+
+      hideButtonElement(buttonId);
       buttons[buttonId].isVisible = false;
     };
 
@@ -565,24 +952,28 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         return;
       }
 
-      // Clear transition timer, reevaluate if buttons will be detached
+      // Clear transition timer, reevaluate pending button visibility changes
       clearTimeout(toggleButtonsTransitionTimer);
+
+      if (buttonsToShow.length && sections.buttons.$element) {
+        clearButtonsSectionReserve(sections.buttons.$element);
+      }
 
       // Show buttons
       for (var i = 0; i < buttonsToShow.length; i++) {
-        insert(buttonOrder, buttonsToShow[i].id, buttons, sections.buttons.$element);
-        buttons[buttonsToShow[i].id].isVisible = true;
+        var showId = buttonsToShow[i].id;
+
+        prepareButtonElementForShow(showId);
+        insert(buttonOrder, showId, buttons, sections.buttons.$element);
+        buttons[showId].isVisible = true;
       }
       buttonsToShow = [];
 
       // Hide buttons
-      var numToHide = 0;
+      var remainVisible = countButtonsVisibleAfterHide();
       var relocateFocus = false;
       for (var j = 0; j < buttonsToHide.length; j++) {
         var button = buttons[buttonsToHide[j].id];
-        if (button.isVisible) {
-          numToHide += 1;
-        }
         if (button.$element.is(':focus')) {
           // Move focus to the first visible button.
           relocateFocus = true;
@@ -594,27 +985,40 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         animationTimer = 0;
       }
 
-      if (numToHide === sections.buttons.$element.children().length) {
-        // All buttons are going to be hidden. Hide container using transition.
-        hideSection(sections.buttons);
-        // Detach buttons
+      var $btnSection = sections.buttons.$element;
+
+      if (remainVisible === 0 && buttonsToHide.length > 0) {
+        // All buttons hidden in flow: keep nodes in DOM, reserve footer height.
+        var reservedHeight = $btnSection.children().length
+          ? reserveButtonsSectionHeight($btnSection)
+          : (buttonsSectionReservedMinHeight || BUTTONS_SECTION_FALLBACK_MIN_HEIGHT);
+
         hideButtons(relocateFocus);
+        applyButtonsSectionReserve($btnSection, reservedHeight);
+
+        resizeButtons();
+
+        toggleButtonsTransitionTimer = setTimeout(function () {
+          self.trigger('resize');
+        }, animationTimer);
       }
       else {
         hideButtons(relocateFocus);
+        clearButtonsSectionReserve($btnSection);
 
-        // Show button section
-        if (!sections.buttons.$element.is(':empty')) {
-          showSection(sections.buttons);
-          setElementHeight(sections.buttons.$element);
+        showSection(sections.buttons);
+        setElementHeight($btnSection);
 
-          // Trigger resize after animation
-          toggleButtonsTransitionTimer = setTimeout(function () {
-            self.trigger('resize');
-          }, animationTimer);
+        var activeSectionHeight = captureButtonsSectionHeight($btnSection);
+        if (activeSectionHeight) {
+          buttonsSectionReservedMinHeight = activeSectionHeight;
+          buttonsPrePopupFooterReserve = activeSectionHeight;
         }
 
-        // Resize buttons to fit container
+        toggleButtonsTransitionTimer = setTimeout(function () {
+          self.trigger('resize');
+        }, animationTimer);
+
         resizeButtons();
       }
 
@@ -1350,6 +1754,22 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         return self;
       }
 
+      var useFeedbackPopup = popupSettings != null && popupSettings.showAsPopup == true
+        && content !== undefined && content.trim().length > 0;
+
+      // Snapshot footer height before buttons are hidden (first check with popup).
+      if (useFeedbackPopup && sections.buttons && sections.buttons.$element.length) {
+        var $btnSectionBeforeHide = sections.buttons.$element;
+
+        if (!$btnSectionBeforeHide.hasClass('h5p-question-buttons-all-hidden')) {
+          var preHidePx = Math.ceil($btnSectionBeforeHide.outerHeight(true));
+
+          if (preHidePx > 0) {
+            buttonsPrePopupFooterReserve = pxToEm($btnSectionBeforeHide, preHidePx);
+          }
+        }
+      }
+
       // Need to toggle buttons right away to avoid flickering/blinking
       // Note: This means content types should invoke hide/showButton before setFeedback
       toggleButtons();
@@ -1391,9 +1811,6 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
       showFeedback = true;
 
-      var useFeedbackPopup = popupSettings != null && popupSettings.showAsPopup == true
-        && content !== undefined && content.trim().length > 0;
-
       if (sections.feedback) {
         // Update section
         update('feedback', $feedback);
@@ -1424,6 +1841,9 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         if (sections.buttons) {
           sections.buttons.$element.removeClass('has-scorebar');
         }
+
+        syncButtonsFooterReserveForFeedbackPopup(buttonsPrePopupFooterReserve);
+        schedulePopupFooterReserveSync();
 
         feedbackTransitionTimer = setTimeout(function () {
           finalizeFeedbackPopupLayout(sections.feedback.$element);
@@ -1563,6 +1983,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         if (initialized) {
           insert(self.order, 'buttons', sections, $wrapper);
         }
+        applyActionButtonAppearanceToButtons();
       }
 
       extras = extras || {};
@@ -1633,13 +2054,40 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         });
       }
 
+      // Always mount buttons so hiding never collapses the footer.
+      $e.appendTo(sections.buttons.$element);
+
       if (visible === undefined || visible) {
-        // Button should be visible
-        $e.appendTo(sections.buttons.$element);
         buttons[id].isVisible = true;
         showSection(sections.buttons);
       }
+      else {
+        hideButtonElement(id);
+        buttons[id].isVisible = false;
+        showSection(sections.buttons);
+      }
 
+      applyActionButtonAppearanceToButtons();
+
+      return self;
+    };
+
+    /**
+     * Set shared appearance for footer action buttons (check, retry, show feedback, etc.).
+     *
+     * @param {Object} appearance
+     * @return {H5P.QuestionCFRD}
+     */
+    self.setActionButtonAppearance = function (appearance) {
+      if (typeof H5P.QuestionCFRD.hasActionButtonAppearance !== 'function') {
+        actionButtonAppearanceConfig = null;
+        return self;
+      }
+
+      actionButtonAppearanceConfig = H5P.QuestionCFRD.hasActionButtonAppearance(appearance) ?
+        appearance :
+        null;
+      applyActionButtonAppearanceToButtons();
       return self;
     };
 
@@ -1774,14 +2222,14 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           buttonsToShow.push({id: id, priority: priority});
         }
 
-      } // If button is not shown
-      else if (!buttons[id].$element.is(':visible')) {
+      } // If button is not shown (use isVisible; :visible is wrong for DOM-hidden buttons)
+      else if (!buttons[id].isVisible) {
 
         // Show button on next tick
         buttonsToShow.push({id: id, priority: priority});
       }
 
-      if (!toggleButtonsTimer) {
+      if (!toggleButtonsTimer && buttonsToShow.length) {
         toggleButtonsTimer = setTimeout(toggleButtons, 0);
       }
 
@@ -1824,18 +2272,13 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           buttonsToHide.push({id: id, priority: priority});
         }
       }
-      else if (!buttons[id].$element.is(':visible')) {
-
-        // Make sure it is detached in case the container is hidden.
-        hideButton(id);
-      }
       else {
 
-        // Hide button on next tick.
+        // Hide button on next tick (buttons stay mounted; use isVisible, not :visible).
         buttonsToHide.push({id: id, priority: priority});
       }
 
-      if (!toggleButtonsTimer) {
+      if (!toggleButtonsTimer && buttonsToHide.length) {
         toggleButtonsTimer = setTimeout(toggleButtons, 0);
       }
 
