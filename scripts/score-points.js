@@ -3,7 +3,7 @@
   /**
    * Makes it easy to add animated score points for your question type.
    *
-   * @class H5P.Question.ScorePoints
+   * @class H5P.QuestionCFRD.ScorePoints
    */
   Question.ScorePoints = function () {
     var self = this;
@@ -75,4 +75,4 @@
     };
   };
 
-})(H5P.Question);
+})(H5P.QuestionCFRD);

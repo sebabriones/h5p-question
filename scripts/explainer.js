@@ -1,4 +1,4 @@
-H5P.Question.Explainer = (function ($) {
+H5P.QuestionCFRD.Explainer = (function ($) {
   /**
    * Constructor
    *

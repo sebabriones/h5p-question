@@ -1,19 +1,19 @@
 {
-  "title": "Question",
-  "machineName": "H5P.Question",
+  "title": "Question (CFRD)",
+  "machineName": "H5P.QuestionCFRD",
   "majorVersion": 1,
-  "minorVersion": 5,
-  "patchVersion": 56,
+  "minorVersion": 1,
+  "patchVersion": 0,
   "runnable": 0,
   "license": "MIT",
-  "author": "Joubel",
+  "author": "sbriones (CFRD-UDEC)",
   "coreApi": {
     "majorVersion": 1,
     "minorVersion": 28
   },
   "preloadedCss": [
     {
-      "path": "styles/question.css"
+      "path": "styles/question-cfrd.css"
     },
     {
       "path": "styles/explainer.css"
@@ -21,7 +21,10 @@
   ],
   "preloadedJs": [
     {
-      "path": "scripts/question.js"
+      "path": "scripts/question-cfrd.js"
+    },
+    {
+      "path": "scripts/button-appearance.js"
     },
     {
       "path": "scripts/explainer.js"
@@ -37,9 +40,9 @@
       "minorVersion": 5
     },
     {
-      "machineName": "H5P.JoubelUI",
+      "machineName": "H5P.JoubelUICFRD",
       "majorVersion": 1,
-      "minorVersion": 3
+      "minorVersion": 1
     },
     {
       "machineName": "H5P.Components",
