@@ -197,7 +197,12 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
             // Add after element
             elements[id].$element.insertAfter(elements[order[i - 1]].$element);
           }
-          prepareButtonElementForShow(id);
+          if (!theme) {
+            prepareButtonElementForShow(id);
+          }
+          else {
+            clearThemeButtonIconOnly(elements[id].$element);
+          }
           elements[id].isVisible = true;
           break;
         }
@@ -279,6 +284,15 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
       var $element = sections.feedback.$element;
       var $parent = sections.content.$element;
+
+      if (theme) {
+        // Theme popup color comes from CSS (--h5p-theme-alternative-light), not inline #ffffff.
+        $element.css('background-color', '');
+        if ($parent) {
+          $parent.find('.h5p-question-feedback-tail').css('background-color', '');
+        }
+        return;
+      }
 
       if (presentation.popupBackgroundColor) {
         $element.css('background-color', presentation.popupBackgroundColor);
@@ -571,8 +585,8 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         return;
       }
 
-      // All action buttons hidden: keep reserved footer height (do not measure 0).
-      if ($element.hasClass('h5p-question-buttons-all-hidden')) {
+      // CFRD 1.0 legacy: reserved footer when buttons stay mounted but hidden.
+      if (!theme && $element.hasClass('h5p-question-buttons-all-hidden')) {
         var reservedMax = $element.css('min-height');
         $element.css('max-height', reservedMax && reservedMax !== '0px' ? reservedMax : 'none');
         return;
@@ -700,6 +714,27 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         .removeClass('h5p-question-button-hidden')
         .removeAttr('aria-hidden')
         .removeAttr('tabindex');
+
+      clearThemeButtonIconOnly(button.$element);
+    };
+
+    /**
+     * Remove stale icon-only from H5P.Components buttons after layout changes.
+     * ResizeObserver in Components can leave this class when evaluation-mode ends.
+     * @private
+     * @param {H5P.jQuery} [$button] Single button, or all theme buttons if omitted
+     */
+    var clearThemeButtonIconOnly = function ($button) {
+      if (!theme || !sections.buttons || !sections.buttons.$element) {
+        return;
+      }
+
+      if ($button && $button.length) {
+        $button.removeClass('icon-only');
+        return;
+      }
+
+      sections.buttons.$element.find('.h5p-theme-button').removeClass('icon-only');
     };
 
     /**
@@ -834,6 +869,10 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
      * @param {string} [buttonReserveOverride]
      */
     var syncButtonsFooterReserveForFeedbackPopup = function (buttonReserveOverride) {
+      if (theme) {
+        return;
+      }
+
       if (!sections.buttons || !sections.buttons.$element) {
         return;
       }
@@ -994,7 +1033,12 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         return;
       }
 
-      hideButtonElement(buttonId);
+      if (theme) {
+        buttons[buttonId].$element.detach();
+      }
+      else {
+        hideButtonElement(buttonId);
+      }
       buttons[buttonId].isVisible = false;
     };
 
@@ -1012,6 +1056,56 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
       // Clear transition timer, reevaluate pending button visibility changes
       clearTimeout(toggleButtonsTransitionTimer);
+
+      if (theme) {
+        // Upstream 1.5: detach hidden buttons; layout via evaluation-container flex.
+        for (var ti = 0; ti < buttonsToShow.length; ti++) {
+          insert(buttonOrder, buttonsToShow[ti].id, buttons, sections.buttons.$element);
+          buttons[buttonsToShow[ti].id].isVisible = true;
+        }
+        buttonsToShow = [];
+
+        var numToHide = 0;
+        var relocateFocusTheme = false;
+        for (var tj = 0; tj < buttonsToHide.length; tj++) {
+          var tButton = buttons[buttonsToHide[tj].id];
+          if (tButton.isVisible) {
+            numToHide += 1;
+          }
+          if (tButton.$element.is(':focus')) {
+            relocateFocusTheme = true;
+          }
+        }
+
+        var themeAnimationTimer = 150;
+        if (sections.feedback && sections.feedback.$element.hasClass('h5p-question-popup')) {
+          themeAnimationTimer = 0;
+        }
+
+        if (numToHide === sections.buttons.$element.children().length) {
+          hideSection(sections.buttons);
+          hideButtons(relocateFocusTheme);
+        }
+        else {
+          hideButtons(relocateFocusTheme);
+
+          if (!sections.buttons.$element.is(':empty')) {
+            showSection(sections.buttons);
+            setElementHeight(sections.buttons.$element);
+
+            toggleButtonsTransitionTimer = setTimeout(function () {
+              clearThemeButtonIconOnly();
+              self.trigger('resize');
+            }, themeAnimationTimer);
+          }
+
+          resizeButtons();
+          clearThemeButtonIconOnly();
+        }
+
+        toggleButtonsTimer = undefined;
+        return;
+      }
 
       if (buttonsToShow.length && sections.buttons.$element) {
         clearButtonsSectionReserve(sections.buttons.$element);
@@ -1743,6 +1837,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
             if (theme) {
               $evaluation.removeClass('evaluation-mode');
+              clearThemeButtonIconOnly();
             }
 
             // Trigger resize after animation
@@ -2173,17 +2268,29 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         });
       }
 
-      // Always mount buttons so hiding never collapses the footer.
-      $e.appendTo(sections.buttons.$element);
-
-      if (visible === undefined || visible) {
-        buttons[id].isVisible = true;
-        showSection(sections.buttons);
+      if (theme) {
+        if (visible === undefined || visible) {
+          $e.appendTo(sections.buttons.$element);
+          buttons[id].isVisible = true;
+          showSection(sections.buttons);
+        }
+        else {
+          buttons[id].isVisible = false;
+        }
       }
       else {
-        hideButtonElement(id);
-        buttons[id].isVisible = false;
-        showSection(sections.buttons);
+        // CFRD 1.0 legacy: keep buttons mounted; hide via CSS without collapsing footer.
+        $e.appendTo(sections.buttons.$element);
+
+        if (visible === undefined || visible) {
+          buttons[id].isVisible = true;
+          showSection(sections.buttons);
+        }
+        else {
+          hideButtonElement(id);
+          buttons[id].isVisible = false;
+          showSection(sections.buttons);
+        }
       }
 
       applyActionButtonAppearanceToButtons();
@@ -2342,14 +2449,18 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           buttonsToShow.push({id: id, priority: priority});
         }
 
-      } // If button is not shown (use isVisible; :visible is wrong for DOM-hidden buttons)
-      else if (!buttons[id].isVisible) {
-
+      }
+      else if (theme ? !buttons[id].$element.is(':visible') : !buttons[id].isVisible) {
         // Show button on next tick
         buttonsToShow.push({id: id, priority: priority});
       }
 
-      if (!toggleButtonsTimer && buttonsToShow.length) {
+      if (theme) {
+        if (!toggleButtonsTimer) {
+          toggleButtonsTimer = setTimeout(toggleButtons, 0);
+        }
+      }
+      else if (!toggleButtonsTimer && buttonsToShow.length) {
         toggleButtonsTimer = setTimeout(toggleButtons, 0);
       }
 
@@ -2392,13 +2503,21 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           buttonsToHide.push({id: id, priority: priority});
         }
       }
+      else if (theme && !buttons[id].$element.is(':visible')) {
+        hideButton(id);
+      }
       else {
 
-        // Hide button on next tick (buttons stay mounted; use isVisible, not :visible).
+        // Hide button on next tick (CFRD legacy: buttons stay mounted).
         buttonsToHide.push({id: id, priority: priority});
       }
 
-      if (!toggleButtonsTimer && buttonsToHide.length) {
+      if (theme) {
+        if (!toggleButtonsTimer) {
+          toggleButtonsTimer = setTimeout(toggleButtons, 0);
+        }
+      }
+      else if (!toggleButtonsTimer && buttonsToHide.length) {
         toggleButtonsTimer = setTimeout(toggleButtons, 0);
       }
 
