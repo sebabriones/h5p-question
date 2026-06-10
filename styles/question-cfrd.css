@@ -480,9 +480,19 @@
 }
 
 .h5p-overall-feedback--image-above .h5p-overall-feedback__image {
-  max-width: 100%;
-  max-height: 10em;
+  max-width: 35%;
+  max-height: min(7em, 20vh);
+  width: auto;
+  height: auto;
+  object-fit: contain;
   align-self: center;
+}
+
+.h5p-question-feedback.h5p-question-popup
+  .h5p-overall-feedback--image-above
+  .h5p-overall-feedback__image {
+  max-width: min(35%, 12em);
+  max-height: min(7em, 20vh);
 }
 
 .h5p-overall-feedback__text {

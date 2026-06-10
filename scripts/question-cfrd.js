@@ -303,15 +303,21 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     };
 
     /**
-     * Measure popup height without locking max-height (overall feedback popups).
+     * Measure rendered popup height (respects max-height constraints).
      *
      * @private
      * @param {H5P.jQuery} $element
+     * @param {number} [maxHeight] Optional cap for positioning
      * @return {number}
      */
-    var measureFeedbackPopupHeight = function ($element) {
-      $element.css('max-height', 'none');
-      return Math.round($element.outerHeight());
+    var measureFeedbackPopupHeight = function ($element, maxHeight) {
+      var height = Math.round($element.outerHeight());
+
+      if (maxHeight !== undefined && height > maxHeight) {
+        height = maxHeight;
+      }
+
+      return height;
     };
 
     /**
@@ -363,8 +369,6 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
       if (sections.scorebar) {
         sections.scorebar.$element.css('max-height', 'none');
       }
-
-      $element.css('max-height', 'none');
 
       var $click = (clickElement != null ? clickElement.$element : null);
 
@@ -471,22 +475,30 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     var positionFeedbackPopup = function ($element, $click) {
       var $container = $element.parent();
       var $tail = $element.siblings('.h5p-question-feedback-tail');
-      var popupWidth = $element.outerWidth();
-      var popupHeight = measureFeedbackPopupHeight($element);
+      var containerWidth = $container.innerWidth();
+      var containerHeight = $container.innerHeight();
+      var popupWidth = Math.round($element.outerWidth());
+      var popupHeight = measureFeedbackPopupHeight($element, containerHeight);
       var space = 15;
       var disableTail = false;
-      var positionY = $container.height() / 2 - popupHeight / 2;
-      var positionX = $container.width() / 2 - popupWidth / 2;
+      var positionY = (containerHeight - popupHeight) / 2;
+      var positionX = (containerWidth - popupWidth) / 2;
       var tailX = 0;
       var tailY = 0;
       var tailRotation = 0;
+      var $gameArea = $container.children('.h5p-inner').first();
+
+      if ($click == null && $gameArea.length) {
+        positionX = $gameArea[0].offsetLeft + ($gameArea.outerWidth() - popupWidth) / 2;
+        positionY = $gameArea[0].offsetTop + ($gameArea.outerHeight() - popupHeight) / 2;
+      }
 
       if ($click != null) {
         // Edge detection for click, takes space into account
         var clickNearTop = ($click[0].offsetTop < space);
-        var clickNearBottom = ($click[0].offsetTop + $click.height() > $container.height() - space);
+        var clickNearBottom = ($click[0].offsetTop + $click.height() > containerHeight - space);
         var clickNearLeft = ($click[0].offsetLeft < space);
-        var clickNearRight = ($click[0].offsetLeft + $click.width() > $container.width() - space);
+        var clickNearRight = ($click[0].offsetLeft + $click.width() > containerWidth - space);
 
         // Click is not in a corner or close to edge, calculate position normally
         positionX = $click[0].offsetLeft - popupWidth / 2  + $click.width() / 2;
@@ -508,8 +520,8 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         }
 
         // If popup is outside right edge, position right
-        if (positionX + popupWidth > $container.width()) {
-          positionX = $container.width() - popupWidth;
+        if (positionX + popupWidth > containerWidth) {
+          positionX = containerWidth - popupWidth;
         }
 
         // Special cases such as corner clicks, or close to an edge, they override X and Y positions if met
@@ -541,10 +553,10 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         }
 
         // Contain popup from overflowing bottom edge
-        if (positionY + popupHeight > $container.height()) {
-          positionY = $container.height() - popupHeight;
+        if (positionY + popupHeight > containerHeight) {
+          positionY = containerHeight - popupHeight;
 
-          if (popupHeight > $container.height() - ($click[0].offsetTop + $click.height() + space)) {
+          if (popupHeight > containerHeight - ($click[0].offsetTop + $click.height() + space)) {
             disableTail = true;
           }
         }
@@ -553,12 +565,36 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         disableTail = true;
       }
 
-      // Contain popup from ovreflowing top edge
-      if (positionY < 0) {
+      // Keep popup inside the content area.
+      if (popupWidth <= containerWidth) {
+        if (positionX < 0) {
+          positionX = 0;
+        }
+        if (positionX + popupWidth > containerWidth) {
+          positionX = containerWidth - popupWidth;
+        }
+      }
+      else {
+        positionX = 0;
+      }
+
+      if (popupHeight <= containerHeight) {
+        if (positionY < 0) {
+          positionY = 0;
+        }
+        if (positionY + popupHeight > containerHeight) {
+          positionY = containerHeight - popupHeight;
+        }
+      }
+      else {
         positionY = 0;
       }
 
-      $element.css({top: positionY, left: positionX});
+      $element.css({
+        top: positionY,
+        left: positionX,
+        'max-height': '100%'
+      });
       $tail.css({top: tailY, left: tailX});
 
       if (!disableTail) {
@@ -2682,7 +2718,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
       // Allow elements to attach and set their height before resizing
       if (!sectionsIsTransitioning && sections.feedback && showFeedback) {
         if (sections.feedback.$element.hasClass('h5p-question-popup')) {
-          sections.feedback.$element.css('max-height', 'none');
+          sections.feedback.$element.css('max-height', '100%');
         }
         else {
           setElementHeight(sections.feedback.$element);
