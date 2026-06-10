@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $lumiRoot = Join-Path $repoRoot 'nuevas-librerias-h5p'
 
 $questionSrc = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
