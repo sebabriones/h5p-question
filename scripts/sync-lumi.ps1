@@ -39,7 +39,8 @@ function Copy-IfExists {
 function Copy-DirectoryContents {
     param(
         [string]$SourceDir,
-        [string]$DestinationDir
+        [string]$DestinationDir,
+        [string[]]$ExcludeExtensions = @()
     )
 
     if (-not (Test-Path $SourceDir)) {
@@ -48,6 +49,11 @@ function Copy-DirectoryContents {
     }
 
     Get-ChildItem -Path $SourceDir -Recurse -File | ForEach-Object {
+        $ext = $_.Extension.ToLowerInvariant()
+        if ($ExcludeExtensions -contains $ext) {
+            return
+        }
+
         $relativePath = $_.FullName.Substring($SourceDir.Length).TrimStart('\')
         $targetPath = Join-Path $DestinationDir $relativePath
         Copy-IfExists $_.FullName $targetPath
@@ -58,7 +64,8 @@ Write-Host "Syncing QuestionCFRD -> $questionDst"
 Reset-Directory $questionDst
 
 Copy-IfExists (Join-Path $questionSrc 'library.json') (Join-Path $questionDst 'library.json')
-Copy-DirectoryContents (Join-Path $questionSrc 'scripts') (Join-Path $questionDst 'scripts')
+# Exclude .ps1 so sync-lumi.ps1 is not packaged into the H5P library (breaks Lumi).
+Copy-DirectoryContents (Join-Path $questionSrc 'scripts') (Join-Path $questionDst 'scripts') -ExcludeExtensions @('.ps1')
 Copy-DirectoryContents (Join-Path $questionSrc 'styles') (Join-Path $questionDst 'styles')
 Copy-DirectoryContents (Join-Path $questionSrc 'images') (Join-Path $questionDst 'images')
 
