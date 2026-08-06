@@ -1850,14 +1850,25 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         }, 0);
       }
       else {
-        showSection(sections.feedback);
+        var hasFeedbackText = content !== undefined && String(content).trim().length > 0;
+
+        // Empty feedback must not reserve layout (margins / max-height).
+        if (hasFeedbackText) {
+          showSection(sections.feedback);
+        }
+        else if (sections.feedback) {
+          hideSection(sections.feedback);
+        }
+
         showSection(sections.scorebar);
 
         resizeButtons();
 
         // Show feedback section
         feedbackTransitionTimer = setTimeout(function () {
-          setElementHeight(sections.feedback.$element);
+          if (hasFeedbackText) {
+            setElementHeight(sections.feedback.$element);
+          }
           setElementHeight(sections.scorebar.$element);
           sectionsIsTransitioning = true;
 
