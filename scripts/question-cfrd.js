@@ -2356,8 +2356,9 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
      * @param {H5P.jQuery} $container
      */
     self.attach = function ($container) {
-      if (self.isRoot()) {
-        self.setActivityStarted();
+      // Primer montaje raíz: reintentar si Integration aún no tiene cid-…
+      if (self.isRoot() && $wrapper === undefined) {
+        Question.ensureActivityStarted(self);
       }
 
       // The first time we attach we also create our DOM elements.
@@ -2669,6 +2670,59 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     }
 
     return null;
+  };
+
+  /**
+   * Avisa al core para emitir xAPI attempted en el primer load.
+   * Reintenta con delays reales hasta que exista H5PIntegration.contents['cid-…']
+   * (el core puede setear activityStartTime sin emitir si Integration aún no está lista).
+   * Solo marca _cfrdActivityStartEnsured cuando Integration está lista.
+   *
+   * @param {H5P.EventDispatcher} instance
+   */
+  Question.ensureActivityStarted = function (instance) {
+    if (!instance || instance._cfrdActivityStartEnsured || instance._cfrdEnsuringActivityStart) {
+      return;
+    }
+
+    instance._cfrdEnsuringActivityStart = true;
+    var delays = [0, 16, 50, 100, 250, 500];
+    var delayIndex = 0;
+
+    var isIntegrationReady = function () {
+      var cid = instance.contentId;
+      return cid !== undefined && cid !== null &&
+        typeof H5PIntegration !== 'undefined' &&
+        H5PIntegration.contents !== undefined &&
+        H5PIntegration.contents['cid-' + cid] !== undefined;
+    };
+
+    var attempt = function () {
+      delete instance.activityStartTime;
+      if (typeof instance.setActivityStarted === 'function') {
+        instance.setActivityStarted();
+      }
+      else if (typeof instance.triggerXAPI === 'function') {
+        instance.triggerXAPI('attempted');
+        instance.activityStartTime = Date.now();
+      }
+
+      if (isIntegrationReady()) {
+        instance._cfrdEnsuringActivityStart = false;
+        instance._cfrdActivityStartEnsured = true;
+        return;
+      }
+
+      if (delayIndex >= delays.length) {
+        // No marcar ensured: Integration aún no lista; un re-attach futuro puede reintentar.
+        instance._cfrdEnsuringActivityStart = false;
+        return;
+      }
+
+      setTimeout(attempt, delays[delayIndex++]);
+    };
+
+    attempt();
   };
 
   /**
