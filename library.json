@@ -3,10 +3,10 @@
   "machineName": "H5P.QuestionCFRD",
   "majorVersion": 1,
   "minorVersion": 0,
-  "patchVersion": 32,
+  "patchVersion": 33,
   "runnable": 0,
   "license": "MIT",
-  "author": "CFRD",
+  "author": "sbriones (CFRD-UDEC)",
   "coreApi": {
     "majorVersion": 1,
     "minorVersion": 7
