@@ -498,7 +498,7 @@
 }
 
 .h5p-question-buttons.h5p-action-buttons-custom .h5p-joubelui-button:hover,
-.h5p-question-buttons.h5p-action-buttons-custom .h5p-joubelui-button:focus {
+.h5p-question-buttons.h5p-action-buttons-custom .h5p-joubelui-button:focus-visible {
   background: var(--h5p-q-btn-hover-bg);
   color: var(--h5p-q-btn-hover-text);
   border-color: var(--h5p-q-btn-hover-border-color);
