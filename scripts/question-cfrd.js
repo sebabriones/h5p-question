@@ -2557,14 +2557,29 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
   };
 
   /**
+   * Decode HTML entities once (editor/content may already store &quot;, &amp;, etc.).
+   *
+   * @private
+   * @param {string} text
+   * @return {string}
+   */
+  var decodeOverallFeedbackHtml = function (text) {
+    if (text === undefined || text === null) {
+      return '';
+    }
+    return $('<div>').html(String(text)).text();
+  };
+
+  /**
    * Escape HTML for safe text output.
+   * Decodes first so already-encoded entities are not double-escaped (&amp;quot;).
    *
    * @private
    * @param {string} text
    * @return {string}
    */
   var escapeOverallFeedbackHtml = function (text) {
-    return $('<div>').text(text).html();
+    return $('<div>').text(decodeOverallFeedbackHtml(text)).html();
   };
 
   /**
@@ -2671,7 +2686,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
     html += '</div></div></div>';
 
-    var plainText = ((lead ? lead + ' ' : '') + body)
+    var plainText = decodeOverallFeedbackHtml((lead ? lead + ' ' : '') + body)
       .replace(/@score/g, score)
       .replace(/@total/g, maxScore);
 
