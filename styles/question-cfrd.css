@@ -156,7 +156,7 @@
 }
 
 .h5p-question-feedback {
-  font-weight: bold;
+  font-weight: normal;
   color: #1a73d9;
   margin: 0 1em;
   max-height: 0;
@@ -297,6 +297,9 @@
 }
 
 .h5p-question-feedback.h5p-question-popup {
+  --h5p-q-feedback-body-size: 1em;
+  --h5p-q-feedback-lead-size: 1em;
+  --h5p-q-feedback-close-size: 1.2em;
   position: absolute;
   display: none;
   width: min(90%, 36em);
@@ -307,8 +310,11 @@
   box-shadow: 0px 0px 7px 0px rgba(0, 0, 0, 0.59);
   border-radius: 1em;
   padding: 1.5em;
+  padding-right: calc(1.5em + var(--h5p-q-feedback-close-size, 1.2em));
   transition: none;
   box-sizing: border-box;
+  font-weight: normal;
+  color: inherit;
 }
 
 .h5p-question-feedback.h5p-question-popup.h5p-question-visible {
@@ -337,6 +343,8 @@
 
 .h5p-question-feedback.h5p-question-popup .h5p-question-feedback-content-text {
   display: block;
+  font-weight: normal;
+  font-size: var(--h5p-q-feedback-body-size, 1em);
 }
 
 .h5p-question-feedback.h5p-question-popup .h5p-question-scorebar-container {
@@ -365,7 +373,7 @@
 }
 
 .h5p-question-feedback.h5p-question-popup.h5p-question-feedback-correct .h5p-question-feedback-content {
-  margin-right: 1.5em;
+  margin-right: 0;
 }
 
 .h5p-question-feedback.h5p-question-popup .h5p-question-retry-button {
@@ -380,16 +388,19 @@
   position: absolute;
   right: 0;
   top: 0;
-  margin: 1em;
+  margin: 0.75em;
   cursor: pointer;
+  z-index: 2;
+  line-height: 1;
 }
 
 .h5p-question-feedback.h5p-question-popup .h5p-question-feedback-close:before {
   font-family: 'h5pFontIcons';
-  font-size: 2.5em;
-  line-height: 0.9em;
+  font-size: var(--h5p-q-feedback-close-size, 1.2em);
+  line-height: 1;
   content: '\e600';
   color: #707070;
+  font-weight: normal;
 }
 
 .h5p-question-feedback-tail {
@@ -482,10 +493,13 @@
 
 .h5p-overall-feedback__lead {
   display: inline;
+  font-size: var(--h5p-q-feedback-lead-size, 1em);
 }
 
 .h5p-overall-feedback__body {
   display: inline;
+  font-weight: normal;
+  font-size: var(--h5p-q-feedback-body-size, 1em);
 }
 
 /* Action buttons — only when author configured appearance.actionButtons */

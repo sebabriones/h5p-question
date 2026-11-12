@@ -224,6 +224,22 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
      * @private
      * @param {object} [presentation]
      */
+    /**
+     * Normalize a font-size value to a CSS em string.
+     *
+     * @private
+     * @param {number|string} value
+     * @param {string} fallback
+     * @return {string}
+     */
+    var toEmSize = function (value, fallback) {
+      var parsed = parseFloat(value);
+      if (isNaN(parsed) || parsed <= 0) {
+        return fallback;
+      }
+      return parsed + 'em';
+    };
+
     var applyFeedbackPopupPresentation = function (presentation) {
       if (!presentation || !sections.feedback) {
         return;
@@ -237,6 +253,21 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         if ($parent) {
           $parent.find('.h5p-question-feedback-tail').css('background-color', presentation.popupBackgroundColor);
         }
+      }
+
+      if (presentation.feedbackBodyFontSize != null) {
+        $element.css('--h5p-q-feedback-body-size',
+          toEmSize(presentation.feedbackBodyFontSize, '1em'));
+      }
+
+      if (presentation.feedbackLeadFontSize != null) {
+        $element.css('--h5p-q-feedback-lead-size',
+          toEmSize(presentation.feedbackLeadFontSize, '1em'));
+      }
+
+      if (presentation.feedbackCloseIconSize != null) {
+        $element.css('--h5p-q-feedback-close-size',
+          toEmSize(presentation.feedbackCloseIconSize, '1.2em'));
       }
     };
 
@@ -1830,7 +1861,10 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
       if (useFeedbackPopup) {
         feedbackPopupPresentation = {
-          popupBackgroundColor: popupSettings.popupBackgroundColor
+          popupBackgroundColor: popupSettings.popupBackgroundColor,
+          feedbackBodyFontSize: popupSettings.feedbackBodyFontSize,
+          feedbackLeadFontSize: popupSettings.feedbackLeadFontSize,
+          feedbackCloseIconSize: popupSettings.feedbackCloseIconSize
         };
 
         scoreBar.setScore(score);
@@ -2485,6 +2519,8 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     var config = {
       popupBackgroundColor: '#ffffff',
       feedbackTextColor: '#333333',
+      feedbackBodyFontSize: 1,
+      feedbackCloseIconSize: 1.2,
       ranges: []
     };
 
@@ -2503,6 +2539,14 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
 
     if (overallFeedbackOption.feedbackTextColor) {
       config.feedbackTextColor = overallFeedbackOption.feedbackTextColor;
+    }
+
+    if (overallFeedbackOption.feedbackBodyFontSize != null) {
+      config.feedbackBodyFontSize = overallFeedbackOption.feedbackBodyFontSize;
+    }
+
+    if (overallFeedbackOption.feedbackCloseIconSize != null) {
+      config.feedbackCloseIconSize = overallFeedbackOption.feedbackCloseIconSize;
     }
 
     if (Array.isArray(overallFeedbackOption.overallFeedback)) {
@@ -2547,7 +2591,10 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         || '#1a73d9',
       feedbackTextAlign: appearance.feedbackTextAlign || entry.feedbackTextAlign || 'left',
       feedbackImage: appearance.feedbackImage || entry.feedbackImage,
-      feedbackImagePosition: appearance.feedbackImagePosition || entry.feedbackImagePosition || 'left'
+      feedbackImagePosition: appearance.feedbackImagePosition || entry.feedbackImagePosition || 'left',
+      feedbackLeadFontSize: appearance.feedbackLeadFontSize != null
+        ? appearance.feedbackLeadFontSize
+        : entry.feedbackLeadFontSize
     };
   };
 
@@ -2631,7 +2678,8 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     return {
       html: html,
       plainText: plainText,
-      popupBackgroundColor: popupBackgroundColor || '#ffffff'
+      popupBackgroundColor: popupBackgroundColor || '#ffffff',
+      feedbackLeadFontSize: appearance.feedbackLeadFontSize
     };
   };
 
@@ -2643,7 +2691,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
    * @param {number} contentId
    * @param {number|string} score
    * @param {number|string} maxScore
-   * @return {{html: string, plainText: string, popupBackgroundColor: string}|null}
+   * @return {{html: string, plainText: string, popupBackgroundColor: string, feedbackBodyFontSize: number, feedbackLeadFontSize: *, feedbackCloseIconSize: number}|null}
    */
   Question.resolveOverallFeedback = function (overallFeedbackOption, scoreRatio, contentId, score, maxScore) {
     var config = Question.normalizeOverallFeedbackConfig(overallFeedbackOption);
@@ -2656,9 +2704,10 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
       var lead = (appearance.feedbackLeadText && appearance.feedbackLeadText.trim()) || '';
       var body = (entry.feedback && entry.feedback.trim()) || '';
       var hasFeedback = lead.length > 0 || body.length > 0;
+      var resolved;
 
       if (entry.from <= scorePercent && entry.to >= scorePercent && hasFeedback) {
-        return Question.buildOverallFeedbackMarkup(
+        resolved = Question.buildOverallFeedbackMarkup(
           entry,
           config.popupBackgroundColor,
           config.feedbackTextColor,
@@ -2666,6 +2715,16 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           score,
           maxScore
         );
+
+        if (resolved) {
+          resolved.feedbackBodyFontSize = config.feedbackBodyFontSize;
+          resolved.feedbackCloseIconSize = config.feedbackCloseIconSize;
+          if (resolved.feedbackLeadFontSize == null) {
+            resolved.feedbackLeadFontSize = appearance.feedbackLeadFontSize;
+          }
+        }
+
+        return resolved;
       }
     }
 

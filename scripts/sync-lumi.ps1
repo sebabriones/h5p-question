@@ -71,18 +71,25 @@ Copy-DirectoryContents (Join-Path $questionSrc 'images') (Join-Path $questionDst
 
 $appDataLibs = Join-Path $env:APPDATA 'lumi\libraries'
 $questionAppData = Join-Path $appDataLibs 'H5P.QuestionCFRD-1.0'
+$h5pCliLibs = Join-Path (Split-Path $repoRoot -Parent) 'h5p-cli\libraries'
+$questionH5pCli = Join-Path $h5pCliLibs 'H5P.QuestionCFRD-1.0'
+
 if (Test-Path $appDataLibs) {
     Write-Host "Syncing QuestionCFRD -> $questionAppData"
     Reset-Directory $questionAppData
-    Copy-IfExists (Join-Path $questionDst 'library.json') (Join-Path $questionAppData 'library.json')
-    Copy-DirectoryContents (Join-Path $questionDst 'scripts') (Join-Path $questionAppData 'scripts') -ExcludeExtensions @('.ps1')
-    Copy-DirectoryContents (Join-Path $questionDst 'styles') (Join-Path $questionAppData 'styles')
-    if (Test-Path (Join-Path $questionDst 'images')) {
-        Copy-DirectoryContents (Join-Path $questionDst 'images') (Join-Path $questionAppData 'images')
-    }
+    Copy-DirectoryContents $questionDst $questionAppData -ExcludeExtensions @('.ps1')
 }
 else {
     Write-Warning "Lumi AppData libraries folder not found; skipped AppData QuestionCFRD sync."
+}
+
+if (Test-Path $h5pCliLibs) {
+    Write-Host "Syncing QuestionCFRD -> $questionH5pCli"
+    Reset-Directory $questionH5pCli
+    Copy-DirectoryContents $questionDst $questionH5pCli -ExcludeExtensions @('.ps1')
+}
+else {
+    Write-Warning "h5p-cli libraries folder not found; skipped h5p-cli QuestionCFRD sync: $h5pCliLibs"
 }
 
 Write-Host "Done."
