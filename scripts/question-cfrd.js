@@ -85,6 +85,9 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     var feedbackPopupOnClose = null;
     var feedbackPopupPresentation = null;
     var actionButtonAppearanceConfig = null;
+    var $feedbackBackdrop = null;
+    var $feedbackModalRoot = null;
+    var feedbackModalSyncTimers = [];
 
     /**
      * Apply shared action-button appearance to the buttons section.
@@ -190,6 +193,161 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     };
 
     /**
+     * Clear deferred modal-layer sync timers.
+     *
+     * @private
+     */
+    var clearFeedbackModalSyncTimers = function () {
+      for (var i = 0; i < feedbackModalSyncTimers.length; i++) {
+        clearTimeout(feedbackModalSyncTimers[i]);
+      }
+      feedbackModalSyncTimers = [];
+    };
+
+    /**
+     * Resolve the root element that should host the feedback modal layer.
+     * Prefer Course Presentation / Interactive Video so the veil covers the
+     * whole activity chrome (instructions, next, footer), not only the
+     * embedded question box.
+     *
+     * @private
+     * @param {H5P.jQuery} $popup
+     * @return {H5P.jQuery}
+     */
+    var getFeedbackModalRoot = function ($popup) {
+      var $anchor = ($popup && $popup.length) ? $popup :
+        ($wrapper && $wrapper.length ? $wrapper : $());
+
+      if (!$anchor.length) {
+        return $();
+      }
+
+      var $presentation = $anchor.closest('.h5p-course-presentation');
+      if ($presentation.length) {
+        return $presentation;
+      }
+
+      var $interactiveVideo = $anchor.closest('.h5p-interactive-video');
+      if ($interactiveVideo.length) {
+        return $interactiveVideo;
+      }
+
+      if ($wrapper && $wrapper.length) {
+        return $wrapper;
+      }
+
+      return $anchor;
+    };
+
+    /**
+     * Place backdrop + popup in the same modal root so the veil sits above the
+     * exercise and below the popup. Re-run after libs hoist the popup (e.g. AB).
+     *
+     * @private
+     */
+    var syncFeedbackModalLayer = function () {
+      if (!sections.feedback || !sections.feedback.$element) {
+        return;
+      }
+
+      var $popup = sections.feedback.$element;
+      if (!$popup.hasClass('h5p-question-popup')) {
+        return;
+      }
+      // Visible class may be added just after makeFeedbackPopup; popup-open is enough mid-setup.
+      if (!$popup.hasClass('h5p-question-visible') &&
+          !$popup.hasClass('h5p-question-popup-open')) {
+        return;
+      }
+
+      var $modalRoot = getFeedbackModalRoot($popup);
+      if (!$modalRoot.length) {
+        return;
+      }
+
+      // Ensure absolute children are positioned against this root.
+      if ($modalRoot.css('position') === 'static') {
+        $modalRoot.css('position', 'relative');
+      }
+
+      if ($feedbackModalRoot &&
+          $feedbackModalRoot.length &&
+          !$feedbackModalRoot.is($modalRoot)) {
+        $feedbackModalRoot.removeClass('h5p-question-feedback-modal');
+      }
+      $feedbackModalRoot = $modalRoot;
+      $modalRoot.addClass('h5p-question-feedback-modal');
+
+      if (!$popup.parent().is($modalRoot)) {
+        $popup.appendTo($modalRoot);
+      }
+
+      var $tail = $popup.siblings('.h5p-question-feedback-tail');
+      if (!$tail.length && sections.content && sections.content.$element) {
+        $tail = sections.content.$element.find('.h5p-question-feedback-tail').first();
+      }
+      if (!$tail.length && $wrapper && $wrapper.length) {
+        $tail = $wrapper.find('.h5p-question-feedback-tail').first();
+      }
+      if ($tail.length && !$tail.parent().is($modalRoot)) {
+        $tail.appendTo($modalRoot);
+      }
+
+      if (!$feedbackBackdrop || !$feedbackBackdrop.length) {
+        $feedbackBackdrop = $('<div/>', {
+          'class': 'h5p-question-feedback-backdrop',
+          'aria-hidden': 'true'
+        });
+      }
+
+      // Sibling under the popup: above activity content, below the dialog.
+      $feedbackBackdrop.insertBefore($popup).show();
+    };
+
+    /**
+     * Show the feedback modal layer and re-sync after possible DOM hoists.
+     *
+     * @private
+     */
+    var showFeedbackBackdrop = function () {
+      syncFeedbackModalLayer();
+      clearFeedbackModalSyncTimers();
+      [0, 16, 50, 100, 250].forEach(function (delay) {
+        feedbackModalSyncTimers.push(setTimeout(function () {
+          syncFeedbackModalLayer();
+          if (sections.feedback &&
+              sections.feedback.$element &&
+              sections.feedback.$element.hasClass('h5p-question-popup') &&
+              sections.feedback.$element.hasClass('h5p-question-visible')) {
+            finalizeFeedbackPopupLayout(sections.feedback.$element);
+          }
+        }, delay));
+      });
+    };
+
+    /**
+     * Hide and remove the feedback interaction backdrop.
+     *
+     * @private
+     */
+    var hideFeedbackBackdrop = function () {
+      clearFeedbackModalSyncTimers();
+
+      if ($feedbackModalRoot && $feedbackModalRoot.length) {
+        $feedbackModalRoot.removeClass('h5p-question-feedback-modal');
+      }
+      if ($wrapper && $wrapper.length) {
+        $wrapper.removeClass('h5p-question-feedback-modal');
+      }
+      $feedbackModalRoot = null;
+
+      if ($feedbackBackdrop && $feedbackBackdrop.length) {
+        $feedbackBackdrop.remove();
+      }
+      $feedbackBackdrop = null;
+    };
+
+    /**
      * Hide a dismissible feedback popup without removing it from the DOM.
      *
      * @private
@@ -199,6 +357,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     var hideDismissibleFeedbackPopup = function ($element, $tail) {
       $element.removeClass('h5p-question-visible h5p-question-popup-open');
       $tail.hide();
+      hideFeedbackBackdrop();
 
       if (sections.scorebar) {
         sections.scorebar.$element.removeClass('h5p-question-visible').css('max-height', '');
@@ -389,25 +548,19 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           hideDismissibleFeedbackPopup($element, $tail);
         }
         else {
+          hideFeedbackBackdrop();
           $element.remove();
           $tail.remove();
         }
       };
 
-      // Draw the close button
-      var $close = $('<div/>', {
-        'class': 'h5p-question-feedback-close',
-        'tabindex': 0,
-        'title': closeText,
+      // Explicit text close button (replaces the old corner X icon).
+      var $close = $('<button/>', {
+        type: 'button',
+        'class': 'h5p-question-feedback-close h5p-question-feedback-close-button',
+        text: closeText || 'Close',
         on: {
-          click: dismissPopup,
-          keydown: function (event) {
-            switch (event.which) {
-              case 13: // Enter
-              case 32: // Space
-                dismissPopup(event);
-            }
-          }
+          click: dismissPopup
         }
       }).hide().appendTo($element);
 
@@ -421,13 +574,21 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           sections.buttons.$element.appendTo(sections.feedback.$element);
         }
       }
-      else if (popupSettings.alwaysShowClose) {
+      else if (popupSettings.alwaysShowClose || feedbackPopupDismissible) {
         $element.addClass('h5p-question-feedback-correct');
         $close.show();
       }
 
       $element.addClass('h5p-question-popup-open');
       applyFeedbackPopupPresentation(popupSettings);
+      // Backdrop after popup-open so sync can attach; setFeedback also shows the section next.
+      showFeedbackBackdrop();
+
+      if ($close.is(':visible')) {
+        setTimeout(function () {
+          $close.focus();
+        }, 0);
+      }
     };
 
     /**
@@ -1715,6 +1876,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           $wrapper.find('.h5p-question-feedback-tail').remove();
         }
 
+        hideFeedbackBackdrop();
         feedbackPopupDismissible = false;
         feedbackPopupOnClose = null;
         feedbackPopupPresentation = null;
@@ -1743,6 +1905,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
       }
 
       showSection(sections.feedback);
+      showFeedbackBackdrop();
       $element.addClass('h5p-question-popup-open');
 
       if (sections.buttons) {
@@ -1752,6 +1915,10 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
       setTimeout(function () {
         finalizeFeedbackPopupLayout($element);
         applyFeedbackPopupPresentation(feedbackPopupPresentation);
+        var $close = $element.find('.h5p-question-feedback-close-button:visible').first();
+        if ($close.length) {
+          $close.focus();
+        }
       }, 0);
 
       return self;
@@ -1876,6 +2043,8 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
         resizeButtons();
         makeFeedbackPopup(popupSettings);
         showSection(sections.feedback);
+        // Libs may hoist the popup (e.g. Advanced Blanks); re-sync modal layer after that.
+        showFeedbackBackdrop();
 
         if (sections.buttons) {
           sections.buttons.$element.removeClass('has-scorebar');
