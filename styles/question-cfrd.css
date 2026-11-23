@@ -537,6 +537,19 @@
   font-size: var(--h5p-q-feedback-body-size, 1em);
 }
 
+.h5p-overall-feedback__body--html {
+  display: block;
+  margin-top: 0.35em;
+}
+
+.h5p-overall-feedback__body--html > p {
+  margin: 0 0 0.4em;
+}
+
+.h5p-overall-feedback__body--html > p:last-child {
+  margin-bottom: 0;
+}
+
 /* Action buttons — only when author configured appearance.actionButtons */
 .h5p-question-buttons.h5p-action-buttons-custom .h5p-joubelui-button {
   background: var(--h5p-q-btn-bg);

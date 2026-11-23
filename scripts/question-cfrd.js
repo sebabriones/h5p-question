@@ -2796,21 +2796,36 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
    * @param {number} contentId
    * @param {number|string} score
    * @param {number|string} maxScore
+   * @param {{allowHtml?: boolean, omitLead?: boolean}} [options]
+   *   allowHtml: body keeps author HTML (not escaped).
+   *   omitLead: ignore highlighted lead text (content types that removed that editor field).
    * @return {{html: string, plainText: string, popupBackgroundColor: string}|null}
    */
-  Question.buildOverallFeedbackMarkup = function (entry, popupBackgroundColor, feedbackTextColor, contentId, score, maxScore) {
+  Question.buildOverallFeedbackMarkup = function (entry, popupBackgroundColor, feedbackTextColor, contentId, score, maxScore, options) {
     var appearance = Question.getOverallFeedbackAppearance(entry);
     var lead = (appearance.feedbackLeadText && appearance.feedbackLeadText.trim()) || '';
     var body = (entry.feedback && entry.feedback.trim()) || '';
+    var allowHtml = options && options.allowHtml === true;
+    var omitLead = options && options.omitLead === true;
+
+    if (omitLead) {
+      lead = '';
+    }
 
     if (!lead && !body) {
       return null;
     }
 
-    var replacePlaceholders = function (text) {
-      return escapeOverallFeedbackHtml(String(text))
-        .replace(/@score/g, score)
-        .replace(/@total/g, maxScore);
+    var replacePlaceholders = function (text, asHtml) {
+      var value = String(text || '');
+
+      if (!asHtml) {
+        value = escapeOverallFeedbackHtml(value);
+      }
+
+      return value
+        .replace(/@score/g, String(score))
+        .replace(/@total/g, String(maxScore));
     };
 
     var bodyTextColor = feedbackTextColor || '#333333';
@@ -2822,6 +2837,8 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
       ? (imagePosition === 'above' ? 'center' : 'left')
       : (appearance.feedbackTextAlign || 'left');
     var outerClasses = 'h5p-overall-feedback';
+    var bodyTag;
+    var bodyClass;
 
     if (hasImage) {
       outerClasses += ' h5p-overall-feedback--image-' + imagePosition;
@@ -2842,7 +2859,7 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     html += '<div class="h5p-overall-feedback__text h5p-overall-feedback__text--align-' + textAlign + '">';
 
     if (lead) {
-      var leadHtml = replacePlaceholders(lead);
+      var leadHtml = replacePlaceholders(lead, false);
       var leadStyle = leadTextColor
         ? ' style="color:' + escapeOverallFeedbackHtml(leadTextColor) + '"'
         : '';
@@ -2852,10 +2869,16 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
     }
 
     if (body) {
-      if (lead) {
+      if (lead && !allowHtml) {
         html += ' ';
       }
-      html += '<span class="h5p-overall-feedback__body">' + replacePlaceholders(body) + '</span>';
+      bodyTag = allowHtml ? 'div' : 'span';
+      bodyClass = allowHtml
+        ? 'h5p-overall-feedback__body h5p-overall-feedback__body--html'
+        : 'h5p-overall-feedback__body';
+      html += '<' + bodyTag + ' class="' + bodyClass + '">' +
+        replacePlaceholders(body, allowHtml) +
+        '</' + bodyTag + '>';
     }
 
     html += '</div></div></div>';
@@ -2880,17 +2903,19 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
    * @param {number} contentId
    * @param {number|string} score
    * @param {number|string} maxScore
+   * @param {{allowHtml?: boolean, omitLead?: boolean}} [options] Opt-in for HTML body and/or hiding lead.
    * @return {{html: string, plainText: string, popupBackgroundColor: string, feedbackBodyFontSize: number, feedbackLeadFontSize: *, feedbackCloseIconSize: number}|null}
    */
-  Question.resolveOverallFeedback = function (overallFeedbackOption, scoreRatio, contentId, score, maxScore) {
+  Question.resolveOverallFeedback = function (overallFeedbackOption, scoreRatio, contentId, score, maxScore, options) {
     var config = Question.normalizeOverallFeedbackConfig(overallFeedbackOption);
     var scorePercent = Math.floor(scoreRatio * 100);
+    var omitLead = options && options.omitLead === true;
     var i;
 
     for (i = 0; i < config.ranges.length; i++) {
       var entry = config.ranges[i];
       var appearance = Question.getOverallFeedbackAppearance(entry);
-      var lead = (appearance.feedbackLeadText && appearance.feedbackLeadText.trim()) || '';
+      var lead = omitLead ? '' : ((appearance.feedbackLeadText && appearance.feedbackLeadText.trim()) || '');
       var body = (entry.feedback && entry.feedback.trim()) || '';
       var hasFeedback = lead.length > 0 || body.length > 0;
       var resolved;
@@ -2902,7 +2927,8 @@ H5P.QuestionCFRD = (function ($, EventDispatcher, JoubelUI) {
           config.feedbackTextColor,
           contentId,
           score,
-          maxScore
+          maxScore,
+          options
         );
 
         if (resolved) {
